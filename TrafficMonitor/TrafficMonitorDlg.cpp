@@ -177,14 +177,14 @@ CString CTrafficMonitorDlg::GetMouseTipsInfo()
         temp.Format(_T("\r\n%s: %s"), CCommon::LoadText(IDS_CPU_FREQ), CCommon::FreqToString(theApp.m_cpu_freq, theApp.m_main_wnd_data));
         tip_info += temp;
     }
+    if (!skin_layout.GetItem(TDI_GPU_USAGE).show && theApp.m_gpu_usage >= 0)
+    {
+        temp.Format(_T("\r\n%s: %d %%"), CCommon::LoadText(IDS_GPU_USAGE), theApp.m_gpu_usage);
+        tip_info += temp;
+    }
 #ifndef WITHOUT_TEMPERATURE
     if (IsTemperatureNeeded())
     {
-        if (theApp.m_general_data.IsHardwareEnable(HI_GPU) && !skin_layout.GetItem(TDI_GPU_USAGE).show && theApp.m_gpu_usage >= 0)
-        {
-            temp.Format(_T("\r\n%s: %d %%"), CCommon::LoadText(IDS_GPU_USAGE), theApp.m_gpu_usage);
-            tip_info += temp;
-        }
         if (theApp.m_general_data.IsHardwareEnable(HI_CPU) && !skin_layout.GetItem(TDI_CPU_TEMP).show && theApp.m_cpu_temperature > 0)
         {
             temp.Format(_T("\r\n%s: %s"), CCommon::LoadText(IDS_CPU_TEMPERATURE), CCommon::TemperatureToString(theApp.m_cpu_temperature, theApp.m_main_wnd_data));
@@ -780,6 +780,7 @@ void CTrafficMonitorDlg::ApplySettings(COptionsDlg& optionsDlg)
         {
             m_tBarDlg->WidthChanged();
         }
+        m_tBarDlg->ApplyWindowTransparentColor();
     }
 
     if (optionsDlg.m_tab3_dlg.IsAutoRunModified())
@@ -1352,6 +1353,7 @@ void CTrafficMonitorDlg::DoMonitorAcquisition()
 
     bool cpu_usage_acquired = false;
     bool cpu_freq_acquired = false;
+    bool gpu_usage_acquired = false;
 
     //获取CPU使用率
     if (lite_version || theApp.m_general_data.cpu_usage_acquire_method != GeneralSettingData::CA_HARDWARE_MONITOR || !theApp.m_general_data.IsHardwareEnable(HI_CPU))
@@ -1366,6 +1368,13 @@ void CTrafficMonitorDlg::DoMonitorAcquisition()
     if (m_cpu_freq_helper.GetCpuFreq(theApp.m_cpu_freq))
         cpu_freq_acquired = true;
     //}
+
+    //获取GPU利用率
+    if (lite_version /*|| is_arm64ec*/ || !theApp.m_general_data.IsHardwareEnable(HI_GPU))
+    {
+        if (m_gpu_usage_helper.GetGpuUsage(theApp.m_gpu_usage))
+            gpu_usage_acquired = true;
+    }
 
     //获取内存利用率
     MEMORYSTATUSEX statex;
@@ -1849,7 +1858,7 @@ void CTrafficMonitorDlg::OnTimer(UINT_PTR nIDEvent)
         //根据任务栏颜色自动设置任务栏窗口背景色
         if (theApp.m_taskbar_data.auto_set_background_color && theApp.m_win_version.IsWindows8OrLater()
             && IsTaskbarWndValid() && theApp.m_taskbar_data.transparent_color != 0
-            && !m_is_foreground_fullscreen)
+            && !m_is_foreground_fullscreen && theApp.m_taskbar_data.disable_d2d)
         {
             CRect rect;
             ::GetWindowRect(m_tBarDlg->GetSafeHwnd(), rect);
