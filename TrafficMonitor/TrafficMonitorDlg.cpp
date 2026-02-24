@@ -205,13 +205,14 @@ CString CTrafficMonitorDlg::GetMouseTipsInfo()
             temp.Format(_T("\r\n%s: %s"), CCommon::LoadText(IDS_MAINBOARD_TEMPERATURE), CCommon::TemperatureToString(theApp.m_main_board_temperature, theApp.m_main_wnd_data));
             tip_info += temp;
         }
-        if (theApp.m_general_data.IsHardwareEnable(HI_HDD) && !skin_layout.GetItem(TDI_HDD_USAGE).show && theApp.m_hdd_usage >= 0)
-        {
-            temp.Format(_T("\r\n%s: %d %%"), CCommon::LoadText(IDS_HDD_USAGE), theApp.m_hdd_usage);
-            tip_info += temp;
-        }
     }
 #endif
+    if (!skin_layout.GetItem(TDI_HDD_USAGE).show && theApp.m_hdd_usage >= 0)
+    {
+        temp.Format(_T("\r\n%s: %d %%"), CCommon::LoadText(IDS_HDD_USAGE), theApp.m_hdd_usage);
+        tip_info += temp;
+}
+
     //添加插件项目的鼠标提示
     tip_info += theApp.GetPlauginTooltipInfo().c_str();
 
@@ -1354,6 +1355,14 @@ void CTrafficMonitorDlg::DoMonitorAcquisition()
     bool cpu_usage_acquired = false;
     bool cpu_freq_acquired = false;
     bool gpu_usage_acquired = false;
+    m_get_disk_usage_by_pdh = false;
+
+    theApp.m_cpu_temperature = -1;
+    theApp.m_gpu_temperature = -1;
+    theApp.m_hdd_temperature = -1;
+    theApp.m_main_board_temperature = -1;
+    theApp.m_gpu_usage = -1;
+    theApp.m_hdd_usage = -1;
 
     //获取CPU使用率
     if (lite_version || theApp.m_general_data.cpu_usage_acquire_method != GeneralSettingData::CA_HARDWARE_MONITOR || !theApp.m_general_data.IsHardwareEnable(HI_CPU))
@@ -1374,6 +1383,33 @@ void CTrafficMonitorDlg::DoMonitorAcquisition()
     {
         if (m_gpu_usage_helper.GetGpuUsage(theApp.m_gpu_usage))
             gpu_usage_acquired = true;
+    }
+
+    //获取硬盘利用率
+    if (lite_version /*|| is_arm64ec*/ || !theApp.m_general_data.IsHardwareEnable(HI_HDD))
+    {
+        int disk_index = m_disk_usage_helper.FindDiskIndex(theApp.m_general_data.hard_disk_name);
+        //没有找到要监控的硬盘时默认使用总体利用率
+        if (disk_index < 0)
+        {
+            disk_index = m_disk_usage_helper.FindDiskIndex(L"_Total");
+            if (disk_index >= 0)
+            {
+                theApp.m_general_data.hard_disk_name = L"_Total";
+            }
+            //仍然没有找到使用第1块硬盘
+            else
+            {
+                const auto& disk_names = m_disk_usage_helper.GetDiskNames();
+                if (!disk_names.empty())
+                {
+                    disk_index = 0;
+                    theApp.m_general_data.hard_disk_name = disk_names.front();
+                }
+            }
+        }
+        if (m_disk_usage_helper.GetDiskUsage(disk_index, theApp.m_hdd_usage))
+            m_get_disk_usage_by_pdh = true;
     }
 
     //获取内存利用率
@@ -1412,7 +1448,8 @@ void CTrafficMonitorDlg::DoMonitorAcquisition()
         theApp.m_gpu_temperature = theApp.m_pMonitor->GpuTemperature();
         //theApp.m_hdd_temperature = theApp.m_pMonitor->HDDTemperature();
         theApp.m_main_board_temperature = theApp.m_pMonitor->MainboardTemperature();
-        theApp.m_gpu_usage = theApp.m_pMonitor->GpuUsage();
+        if (!gpu_usage_acquired)
+            theApp.m_gpu_usage = theApp.m_pMonitor->GpuUsage();
         if (!cpu_freq_acquired)
             theApp.m_cpu_freq = theApp.m_pMonitor->CpuFreq();
         if (!cpu_usage_acquired)
@@ -1455,29 +1492,23 @@ void CTrafficMonitorDlg::DoMonitorAcquisition()
             theApp.m_hdd_temperature = -1;
         }
         //获取硬盘利用率
-        if (!theApp.m_pMonitor->AllHDDUsage().empty())
+        if (!m_get_disk_usage_by_pdh)
         {
-            auto iter = theApp.m_pMonitor->AllHDDUsage().find(theApp.m_general_data.hard_disk_name);
-            if (iter == theApp.m_pMonitor->AllHDDUsage().end())
+            if (!theApp.m_pMonitor->AllHDDUsage().empty())
             {
-                iter = theApp.m_pMonitor->AllHDDUsage().begin();
-                theApp.m_general_data.hard_disk_name = iter->first;
+                auto iter = theApp.m_pMonitor->AllHDDUsage().find(theApp.m_general_data.hard_disk_name);
+                if (iter == theApp.m_pMonitor->AllHDDUsage().end())
+                {
+                    iter = theApp.m_pMonitor->AllHDDUsage().begin();
+                    theApp.m_general_data.hard_disk_name = iter->first;
+                }
+                theApp.m_hdd_usage = iter->second;
             }
-            theApp.m_hdd_usage = iter->second;
+            else
+            {
+                theApp.m_hdd_usage = -1;
+            }
         }
-        else
-        {
-            theApp.m_hdd_usage = -1;
-        }
-    }
-    else
-    {
-        theApp.m_cpu_temperature = -1;
-        theApp.m_gpu_temperature = -1;
-        theApp.m_hdd_temperature = -1;
-        theApp.m_main_board_temperature = -1;
-        theApp.m_gpu_usage = -1;
-        theApp.m_hdd_usage = -1;
     }
 #endif
 
